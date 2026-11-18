@@ -83,10 +83,6 @@ async function initialSync(){
    const rows=local.map(taskToRow);
    const {error:insertError}=await sb.from('tasks').insert(rows);
    if(insertError)throw insertError;
- } else if(remote.length && local.length){
-   const known=new Set(remote.map(r=>r.id));
-   const missing=local.filter(t=>!known.has(t.id));
-   if(missing.length){const {error:mergeError}=await sb.from('tasks').insert(missing.map(taskToRow));if(mergeError)throw mergeError}
  }
  const {data:all,error:readError}=await sb.from('tasks').select('*').eq('user_id',currentUser.id).order('created_at',{ascending:true});
  if(readError)throw readError;
