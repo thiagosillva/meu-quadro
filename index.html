@@ -42,13 +42,14 @@ footer{text-align:center;color:#899bb2;font-size:11px;padding:8px 15px 22px}dial
 
 <main><section class="stats"><div class="stat stat-total"><b id="total">0</b><span>Tarefas no total</span></div><div class="stat stat-overdue"><b id="overdue">0</b><span>Em atraso</span></div><div class="stat stat-todo"><b id="todo">0</b><span>A fazer</span></div><div class="stat stat-doing"><b id="doing">0</b><span>Em andamento</span></div><div class="stat stat-done"><b id="done">0</b><span>Concluídas</span></div></section>
 <div class="toolbar"><input class="search" id="search" placeholder="⌕  Buscar tarefa..." aria-label="Buscar tarefa"><select class="filter" id="categoryFilter" aria-label="Filtrar categoria"><option value="">Todas</option><option>Trabalho</option><option>Pessoal</option><option>Estudos</option><option>Outros</option></select></div><section class="board" id="board"></section></main>
-<footer><span id="syncStatus">Conectando...</span> · <button id="signOut" style="border:0;background:transparent;color:#034694;font-size:11px;padding:4px">Sair da conta</button></footer>
+<footer><span id="syncStatus">Conectando...</span> · <button id="enablePush" style="border:1px solid #cbdcf7;background:#edf4ff;color:#034694;border-radius:9px;padding:7px 10px;font-size:11px;font-weight:700;margin-right:8px">Ativar notificações</button><button id="signOut" style="border:0;background:transparent;color:#034694;font-size:11px;padding:4px">Sair da conta</button></footer>
 <dialog id="editor"><form class="modal" id="taskForm"><h2 id="formTitle">Nova tarefa</h2><input type="hidden" id="taskId"><div class="field"><label for="title">Nome da tarefa *</label><input id="title" maxlength="90" required placeholder="Ex.: Organizar documentos"></div><div class="field"><label for="description">Detalhes (opcional)</label><textarea id="description" maxlength="500" placeholder="Anotações, informações ou próximos passos..."></textarea></div><div class="two"><div class="field"><label for="status">Status</label><select id="status"><option value="todo">A fazer</option><option value="doing">Fazendo</option><option value="done">Concluído</option></select></div><div class="field"><label for="priority">Prioridade</label><select id="priority"><option value="medium">Média</option><option value="high">Alta</option><option value="low">Baixa</option></select></div></div><div class="two"><div class="field"><label for="category">Categoria</label><select id="category"><option>Trabalho</option><option>Pessoal</option><option>Estudos</option><option>Outros</option></select></div><div class="field"><label for="due">Prazo</label><input id="due" type="date"></div></div><div class="field repeat-field"><label for="repeatMonthly"><input id="repeatMonthly" type="checkbox"> <span>↻ Repetir esta tarefa todo mês</span></label><small class="repeat-help">Quando você tocar em “Concluir”, a tarefa será programada para o mês seguinte automaticamente.</small></div><div class="modalactions"><button type="button" class="cancel" id="cancel">Cancelar</button><button type="submit" class="save">Salvar tarefa</button></div></form></dialog>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
 const SUPABASE_URL='https://cgvelgepcphutxlrzbbq.supabase.co';
 const SUPABASE_KEY='sb_publishable_mU6uSL9PWzgOzWcvyW0uiw_Ue9p_BNN';
+const VAPID_PUBLIC_KEY='BCRYwmxTbWx9f2XV36cYvfZ1LbalwJ3i0286ZzVbBrkQNjTV-0WZWNDGRGg01Rs9T3rpW2UENkAJ-9rkqbvZQY4';
 const sb=window.supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
 const KEY='meu-quadro-ios-v1';
 const statuses=[{id:'todo',name:'A fazer',color:'#e58a19'},{id:'doing',name:'Fazendo',color:'#034694'},{id:'done',name:'Concluído',color:'#2e9d57'}];
@@ -100,6 +101,43 @@ function startRealtime(){
    saveLocal();render();setStatus('Sincronizado com a nuvem');
  }).subscribe();
 }
+function urlBase64ToUint8Array(base64String){
+ const padding='='.repeat((4-base64String.length%4)%4);
+ const base64=(base64String+padding).replace(/-/g,'+').replace(/_/g,'/');
+ const raw=atob(base64);return Uint8Array.from([...raw].map(ch=>ch.charCodeAt(0)));
+}
+async function enablePushNotifications(){
+ const button=$('enablePush');
+ if(!currentUser){alert('Entre na sua conta primeiro.');return}
+ if(!('serviceWorker' in navigator)||!('PushManager' in window)||!('Notification' in window)){
+  alert('Este navegador não oferece suporte a notificações push. No iPhone, adicione o Meu Quadro à Tela de Início e abra por lá.');return
+ }
+ try{
+  button.disabled=true;button.textContent='Ativando...';
+  const permission=await Notification.requestPermission();
+  if(permission!=='granted'){alert('A permissão de notificações não foi concedida.');button.textContent='Ativar notificações';button.disabled=false;return}
+  const registration=await navigator.serviceWorker.register('./sw.js');
+  await navigator.serviceWorker.ready;
+  let subscription=await registration.pushManager.getSubscription();
+  if(!subscription){
+   subscription=await registration.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:urlBase64ToUint8Array(VAPID_PUBLIC_KEY)});
+  }
+  const json=subscription.toJSON();
+  const {error}=await sb.from('push_subscriptions').upsert({
+   user_id:currentUser.id,
+   endpoint:json.endpoint,
+   p256dh:json.keys.p256dh,
+   auth:json.keys.auth
+  },{onConflict:'endpoint'});
+  if(error)throw error;
+  button.textContent='Notificações ativadas';
+  alert('Notificações ativadas neste dispositivo!');
+ }catch(error){
+  console.error('Erro ao ativar notificações:',error);
+  button.textContent='Ativar notificações';
+  alert('Não foi possível ativar as notificações: '+(error.message||'verifique a conexão e tente novamente.'));
+ }finally{button.disabled=false}
+}
 async function showApp(user){
  currentUser=user;$('authGate').style.display='none';
  try{await initialSync();startRealtime()}catch(e){setStatus('Falha na sincronização. Verifique a configuração da API.',true);$('authGate').style.display='flex';$('authMessage').textContent='Não foi possível conectar ao banco: '+e.message}
@@ -123,6 +161,7 @@ $('authSubmit').onclick=async()=>{
  finally{$('authSubmit').disabled=false;$('authSubmit').textContent=authMode==='login'?'Entrar':'Criar conta'}
 };
 $('signOut').onclick=async()=>{if(confirm('Deseja sair da sua conta?')){if(channel)await sb.removeChannel(channel);await sb.auth.signOut();currentUser=null;$('authGate').style.display='flex';setAuthMode('login')}};
+$('enablePush').onclick=enablePushNotifications;
 $('newTask').onclick=()=>openEditor();$('cancel').onclick=()=>$('editor').close();
 $('taskForm').onsubmit=async e=>{e.preventDefault();const id=$('taskId').value;const due=$('due').value,repeat=$('repeatMonthly').checked;if(repeat&&!due){alert('Para repetir mensalmente, informe o prazo da primeira ocorrência.');$('due').focus();return}const t={id:id||crypto.randomUUID(),title:$('title').value.trim(),description:$('description').value.trim(),status:$('status').value,priority:$('priority').value,category:$('category').value,due,recurrence:repeat?{type:'monthly',day:Number(due.split('-')[2])}:null};if(!t.title)return;
  const previous=tasks.slice();if(id)tasks=tasks.map(x=>x.id===id?t:x);else tasks.unshift(t);saveLocal();render();$('editor').close();
