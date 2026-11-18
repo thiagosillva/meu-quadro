@@ -118,10 +118,19 @@ async function enablePushNotifications(){
   if(permission!=='granted'){alert('A permissão de notificações não foi concedida.');button.textContent='Ativar notificações';button.disabled=false;return}
   const registration=await navigator.serviceWorker.register('./sw.js');
   await navigator.serviceWorker.ready;
-  let subscription=await registration.pushManager.getSubscription();
-  if(!subscription){
-   subscription=await registration.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:urlBase64ToUint8Array(VAPID_PUBLIC_KEY)});
+  // Renova a assinatura para usar a chave VAPID atual.
+  const oldSubscription=await registration.pushManager.getSubscription();
+  if(oldSubscription){
+   const oldEndpoint=oldSubscription.endpoint;
+   await oldSubscription.unsubscribe();
+   const {error:deleteError}=await sb.from('push_subscriptions').delete()
+    .eq('user_id',currentUser.id).eq('endpoint',oldEndpoint);
+   if(deleteError)throw deleteError;
   }
+  const subscription=await registration.pushManager.subscribe({
+   userVisibleOnly:true,
+   applicationServerKey:urlBase64ToUint8Array(VAPID_PUBLIC_KEY)
+  });
   const json=subscription.toJSON();
   const {error}=await sb.from('push_subscriptions').upsert({
    user_id:currentUser.id,
