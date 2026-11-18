@@ -1,0 +1,15 @@
+{
+  "id": "./",
+  "name": "Meu Quadro",
+  "short_name": "Meu Quadro",
+  "description": "Seu espaço de organização de tarefas.",
+  "lang": "pt-BR",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f2f6fc",
+  "theme_color": "#034694",
+  "icons": [
+    { "src": "./icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}
